@@ -16,7 +16,7 @@ NeRF项目代码注释：load_llff.py,   run_nerf.py
 
 推导：
 
-![](./imgs/坐标系变换.jpg)
+![](imgs/坐标系变换.jpg)
 
 编程：
 
@@ -126,7 +126,7 @@ PSNR变化基本一致
 
 camera to world的矩阵如下，**旋转矩阵的第一列到第三列分别表示了相机坐标系的X, Y, Z轴在世界坐标系下对应的方向；平移向量表示的是相机原点在世界坐标系的对应位置**：
 
-![](./imgs/c2w矩阵.png)
+![](imgs/c2w矩阵.png)
 
 推导：
 
@@ -153,7 +153,7 @@ def draw_camera(ax, R, t):
 
 绘图结果如下：
 
-![](./imgs/相机位姿.png)
+![](imgs/相机位姿.png)
 
 ## LLFF 数据预处理的深入理解
 
@@ -201,7 +201,7 @@ poses[:,:3,3] *= sc
 bds *= sc 
 ```
 
-![](./imgs/NDC.png)
+![](imgs/NDC.png)
 
 如上图，NDC坐标系中，相机面向-z轴，并且在z=-near平面后面。near plane 到 far plane的部分会被归一化到【-1，1】。
 
@@ -219,7 +219,7 @@ NeRF中采样点表示为
 $$
 \bold o+t\bold d
 $$
-![](./imgs/NDC推导目标.jpg)
+![](imgs/NDC推导目标.jpg)
 
 变换到NDC中：
 $$
@@ -227,7 +227,7 @@ $$
 $$
 
 
-![](./imgs/NDC推导结果.jpg)
+![](imgs/NDC推导结果.jpg)
 
 从公式 (14) 可以看出，当 t=0 时，t'=0，当 t→∞ 时，t′→1。所以，在相机坐标系对光线进行采样 (t∈(0,∞))，就等价于在 NDC ray space 中，对 t′ 在 [0,1] 范围内进行采样。
 

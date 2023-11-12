@@ -8,3 +8,4 @@
 data/*
 logs/*
 !imgs/*
+*.html
