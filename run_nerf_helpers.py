@@ -194,7 +194,7 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
 
 # Hierarchical sampling (section 5.2)
 def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
-    # Get pdf
+    # Get pdf  bin的中点代表bin
     weights = weights + 1e-5 # prevent nans
     pdf = weights / torch.sum(weights, -1, keepdim=True)
     cdf = torch.cumsum(pdf, -1)
@@ -223,13 +223,13 @@ def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
     inds = torch.searchsorted(cdf, u, right=True)
     below = torch.max(torch.zeros_like(inds-1), inds-1)
     above = torch.min((cdf.shape[-1]-1) * torch.ones_like(inds), inds)
-    inds_g = torch.stack([below, above], -1)  # (batch, N_samples, 2)
+    inds_g = torch.stack([below, above], -1)  # (batch, N_samples, 2) [1024, 128, 2]
 
     # cdf_g = tf.gather(cdf, inds_g, axis=-1, batch_dims=len(inds_g.shape)-2)
     # bins_g = tf.gather(bins, inds_g, axis=-1, batch_dims=len(inds_g.shape)-2)
-    matched_shape = [inds_g.shape[0], inds_g.shape[1], cdf.shape[-1]]
-    cdf_g = torch.gather(cdf.unsqueeze(1).expand(matched_shape), 2, inds_g)
-    bins_g = torch.gather(bins.unsqueeze(1).expand(matched_shape), 2, inds_g)
+    matched_shape = [inds_g.shape[0], inds_g.shape[1], cdf.shape[-1]]  # [1024, 128, 63]
+    cdf_g = torch.gather(cdf.unsqueeze(1).expand(matched_shape), 2, inds_g)  # cdf.unsqueeze(1).shape=torch.Size([1024, 1, 63])  cdf_g 1024,128,2
+    bins_g = torch.gather(bins.unsqueeze(1).expand(matched_shape), 2, inds_g)  # 1024,128,2
 
     denom = (cdf_g[...,1]-cdf_g[...,0])
     denom = torch.where(denom<1e-5, torch.ones_like(denom), denom)

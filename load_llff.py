@@ -6,6 +6,7 @@ import os, imageio
 ##########  see https://github.com/Fyusion/LLFF for original
 
 def _minify(basedir, factors=[], resolutions=[]):
+    # 检查是否需要降采样
     needtoload = False
     for r in factors:
         imgdir = os.path.join(basedir, 'images_{}'.format(r))
@@ -55,22 +56,21 @@ def _minify(basedir, factors=[], resolutions=[]):
             check_output('rm {}/*.{}'.format(imgdir, ext), shell=True)
             print('Removed duplicates')
         print('Done')
-            
-        
+
         
         
 def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
     
-    poses_arr = np.load(os.path.join(basedir, 'poses_bounds.npy'))
-    poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1,2,0])
-    bds = poses_arr[:, -2:].transpose([1,0])
+    poses_arr = np.load(os.path.join(basedir, 'poses_bounds.npy'))  # shape[1] = 17 = 3*4+3 + 2= [R T | [H W F]^T], 最后两个是near far的值
+    poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1,2,0])  # 变成[R T | [H W F]^T]矩阵， shape [3,5, samples num]
+    bds = poses_arr[:, -2:].transpose([1,0])  # 取出near, far, 转置， near一行，far一行 
     
     img0 = [os.path.join(basedir, 'images', f) for f in sorted(os.listdir(os.path.join(basedir, 'images'))) \
             if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
     sh = imageio.imread(img0).shape
     
     sfx = ''
-    
+    # 根据参数确定是否需要降采样
     if factor is not None:
         sfx = '_{}'.format(factor)
         _minify(basedir, factors=[factor])
@@ -99,38 +99,38 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
         return
     
     sh = imageio.imread(imgfiles[0]).shape
-    poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
-    poses[2, 4, :] = poses[2, 4, :] * 1./factor
+    poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])  # 根据读取的图片长宽更新pose里的H和W
+    poses[2, 4, :] = poses[2, 4, :] * 1./factor  # 更新焦距
     
     if not load_imgs:
         return poses, bds
     
     def imread(f):
         if f.endswith('png'):
-            return imageio.imread(f, ignoregamma=True)
+            return imageio.imread(f, format="PNG-PIL", ignoregamma=True)
         else:
             return imageio.imread(f)
         
-    imgs = imgs = [imread(f)[...,:3]/255. for f in imgfiles]
+    imgs = imgs = [imread(f)[...,:3]/255. for f in imgfiles]  # 读取rgb并归一化
     imgs = np.stack(imgs, -1)  
     
-    print('Loaded image data', imgs.shape, poses[:,-1,0])
+    print('Loaded image data', imgs.shape, poses[:,-1,0])  # 打印载入图像数据，和hwf信息
     return poses, bds, imgs
 
     
             
             
-    
-
 def normalize(x):
     return x / np.linalg.norm(x)
 
+
 def viewmatrix(z, up, pos):
+    # 生成 R T矩阵
     vec2 = normalize(z)
     vec1_avg = up
-    vec0 = normalize(np.cross(vec1_avg, vec2))
-    vec1 = normalize(np.cross(vec2, vec0))
-    m = np.stack([vec0, vec1, vec2, pos], 1)
+    vec0 = normalize(np.cross(vec1_avg, vec2))  # z,y叉乘得到x
+    vec1 = normalize(np.cross(vec2, vec0))  # x,z叉乘得到y，因为输入的up是计算得到的，不一定和Z轴垂直，所以修正一下up
+    m = np.stack([vec0, vec1, vec2, pos], 1)  # 组成3*4的R T矩阵
     return m
 
 def ptstocam(pts, c2w):
@@ -141,10 +141,10 @@ def poses_avg(poses):
 
     hwf = poses[0, :3, -1:]
 
-    center = poses[:, :3, 3].mean(0)
-    vec2 = normalize(poses[:, :3, 2].sum(0))
-    up = poses[:, :3, 1].sum(0)
-    c2w = np.concatenate([viewmatrix(vec2, up, center), hwf], 1)
+    center = poses[:, :3, 3].mean(0)  # 相机坐标系原点中心点
+    vec2 = normalize(poses[:, :3, 2].sum(0))  # z轴单位向量
+    up = poses[:, :3, 1].sum(0)  # y轴单位向量
+    c2w = np.concatenate([viewmatrix(vec2, up, center), hwf], 1)  # 组成3*5矩阵
     
     return c2w
 
@@ -164,15 +164,15 @@ def render_path_spiral(c2w, up, rads, focal, zdelta, zrate, rots, N):
 
 
 def recenter_poses(poses):
-
+    # 中心化相机位姿
     poses_ = poses+0
     bottom = np.reshape([0,0,0,1.], [1,4])
     c2w = poses_avg(poses)
-    c2w = np.concatenate([c2w[:3,:4], bottom], -2)
+    c2w = np.concatenate([c2w[:3,:4], bottom], -2)  # 平均pose的4*4矩阵
     bottom = np.tile(np.reshape(bottom, [1,1,4]), [poses.shape[0],1,1])
-    poses = np.concatenate([poses[:,:3,:4], bottom], -2)
+    poses = np.concatenate([poses[:,:3,:4], bottom], -2)  # 所有pose的4*4矩阵
 
-    poses = np.linalg.inv(c2w) @ poses
+    poses = np.linalg.inv(c2w) @ poses  # 返回的相机位姿中旋转矩阵为单位矩阵，平移量为零向量。也就是变换后的平均相机位姿的位置处在世界坐标系的原点，XYZ轴朝向和世界坐标系的向一致。
     poses_[:,:3,:4] = poses[:,:3,:4]
     poses = poses_
     return poses
@@ -240,22 +240,29 @@ def spherify_poses(poses, bds):
     return poses_reset, new_poses, bds
     
 
-def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_zflat=False):
+def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_zflat=False, use_mat=False):
     
 
     poses, bds, imgs = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
     print('Loaded', basedir, bds.min(), bds.max())
     
-    # Correct rotation matrix ordering and move variable dim to axis 0
-    poses = np.concatenate([poses[:, 1:2, :], -poses[:, 0:1, :], poses[:, 2:, :]], 1)
-    poses = np.moveaxis(poses, -1, 0).astype(np.float32)
-    imgs = np.moveaxis(imgs, -1, 0).astype(np.float32)
+    # Correct rotation matrix ordering and move variable dim to axis 0  把LLFF坐标系转换成NeRF坐标系的c2w矩阵
+    if use_mat:
+        drb2rub_matrix = np.array([[0, 1, 0],
+                                   [-1, 0, 0],
+                                   [0, 0, 1]])
+        # 三列代表X,Y,Z轴在世界坐标系的方向，相当于三个点，转成NeRF坐标系
+        poses[:, :3, :] = drb2rub_matrix @ poses[:, :3, :]
+    else:
+        poses = np.concatenate([poses[:, 1:2, :], -poses[:, 0:1, :], poses[:, 2:, :]], 1)
+    poses = np.moveaxis(poses, -1, 0).astype(np.float32)  # 把位姿数量维度放回第一维
+    imgs = np.moveaxis(imgs, -1, 0).astype(np.float32)  # 把图片数量维度放回第一维
     images = imgs
-    bds = np.moveaxis(bds, -1, 0).astype(np.float32)
+    bds = np.moveaxis(bds, -1, 0).astype(np.float32)  # 把bounds数量维度放回第一维
     
     # Rescale if bd_factor is provided
     sc = 1. if bd_factor is None else 1./(bds.min() * bd_factor)
-    poses[:,:3,3] *= sc
+    poses[:,:3,3] *= sc  # 原点缩放，why?
     bds *= sc
     
     if recenter:
@@ -268,7 +275,7 @@ def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=Fal
         
         c2w = poses_avg(poses)
         print('recentered', c2w.shape)
-        print(c2w[:3,:4])
+        print(c2w[:3,:4])  # 这里可以看出相机平均位姿 原点与世界坐标系原点重合，x、y、z与世界坐标系方向一致
 
         ## Get spiral
         # Get average pose
